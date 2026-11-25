@@ -18,7 +18,7 @@ exports.handler = async function (event) {
     };
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = (process.env.GEMINI_API_KEY || "").trim();
   if (!apiKey) {
     return {
       statusCode: 500,
@@ -48,59 +48,81 @@ Hãy phân tích hình ảnh theo các quy tắc sau:
    - Đặt mode = "raw" nếu ảnh liệt kê dãy số liệu rời rạc không kèm tần số.
 3. Chuẩn hóa số: Chuyển dấu phẩy thập phân kiểu Việt Nam (ví dụ 7,5) thành số thực chuẩn (7.5).`;
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-
-    const response = await fetch(geminiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { text: prompt },
-              {
-                inlineData: {
-                  mimeType: mimeType,
-                  data: base64Data,
-                },
+    const requestPayload = {
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType: mimeType,
+                data: base64Data,
               },
-            ],
-          },
-        ],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              mode: { type: "STRING", enum: ["raw", "freq"] },
-              rawNumbers: { type: "ARRAY", items: { type: "NUMBER" } },
-              frequencyTable: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    value: { type: "NUMBER" },
-                    frequency: { type: "INTEGER" },
-                  },
-                  required: ["value", "frequency"],
-                },
-              },
-              description: { type: "STRING" },
             },
-            required: ["mode", "description"],
-          },
+          ],
         },
-      }),
-    });
+      ],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "OBJECT",
+          properties: {
+            mode: { type: "STRING", enum: ["raw", "freq"] },
+            rawNumbers: { type: "ARRAY", items: { type: "NUMBER" } },
+            frequencyTable: {
+              type: "ARRAY",
+              items: {
+                type: "OBJECT",
+                properties: {
+                  value: { type: "NUMBER" },
+                  frequency: { type: "INTEGER" },
+                },
+                required: ["value", "frequency"],
+              },
+            },
+            description: { type: "STRING" },
+          },
+          required: ["mode", "description"],
+        },
+      },
+    };
 
-    if (!response.ok) {
-      const status = response.status === 429 ? 429 : 502;
+    // Tự động chọn cổng API phù hợp với định dạng Key (Vertex Express AQ. vs AI Studio AIzaSy)
+    const isExpressKey = apiKey.startsWith("AQ.");
+    const endpoints = isExpressKey
+      ? [
+          `https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        ]
+      : [
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        ];
+
+    let response = null;
+    let lastErrorText = "";
+
+    for (const url of endpoints) {
+      response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestPayload),
+      });
+
+      if (response.ok) break;
+      lastErrorText = await response.text();
+      console.error("API attempt failed:", response.status, lastErrorText);
+      if (response.status === 429) break;
+    }
+
+    if (!response || !response.ok) {
+      const status = response && response.status === 429 ? 429 : 502;
       return {
         statusCode: status,
         headers,
         body: JSON.stringify({
-          error: status === 429 ? "Hết lượt AI miễn phí tạm thời" : "Lỗi kết nối dịch vụ AI",
+          error: status === 429 ? "Hết lượt AI miễn phí tạm thời" : "Lỗi xác thực hoặc kết nối API Key",
+          detail: lastErrorText.slice(0, 200),
         }),
       };
     }
@@ -123,6 +145,7 @@ Hãy phân tích hình ảnh theo các quy tắc sau:
       body: JSON.stringify(parsed),
     };
   } catch (err) {
+    console.error("Handler error:", err);
     return {
       statusCode: 500,
       headers,
