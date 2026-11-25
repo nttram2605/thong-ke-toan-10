@@ -47,7 +47,7 @@ Hãy phân tích hình ảnh theo các quy tắc sau:
    - Đặt mode = "freq" nếu ảnh là bảng phân bố tần số (gồm hàng/cột Giá trị x_i và hàng/cột Tần số n_i như: Số học sinh, Số ngày, Số lần, Số cây, Số người, Tần số...).
    - Đặt mode = "raw" nếu ảnh liệt kê dãy số liệu rời rạc không kèm tần số.
 3. Chuẩn hóa số: Chuyển dấu phẩy thập phân kiểu Việt Nam (ví dụ 7,5) thành số thực chuẩn (7.5).
-4. Chỉ trả về DUY NHẤT một đối tượng JSON hợp lệ (không giải thích thêm) theo đúng mẫu sau:
+4. Chỉ trả về DUY NHẤT một đối tượng JSON hợp lệ (không thêm chữ giải thích bên ngoài) theo đúng cấu trúc:
 {
   "mode": "freq",
   "rawNumbers": [],
@@ -70,43 +70,66 @@ Hãy phân tích hình ảnh theo các quy tắc sau:
       },
     ];
 
-    // Bước 1: Tự động lấy danh sách các model Flash khả dụng trên chính API Key này
-    let candidateModels = ["models/gemini-3.8-flash", "models/gemini-flash-latest"];
+    // Ưu tiên đúng các model mới nhất mà Google khuyến nghị
+    const priorityModels = [
+      "models/gemini-3.8-flash",
+      "models/gemini-3.5-flash-lite",
+      "models/gemini-flash-latest",
+      "models/gemini-flash-lite-latest",
+    ];
+
+    let discoveredModels = [];
+    let hasGemmaBackup = false;
+
     try {
       const listRes = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
       );
       if (listRes.ok) {
         const listData = await listRes.json();
-        const availableFlash = (listData.models || [])
-          .filter(
-            (m) =>
-              m.name &&
-              m.name.toLowerCase().includes("flash") &&
-              Array.isArray(m.supportedGenerationMethods) &&
-              m.supportedGenerationMethods.includes("generateContent")
-          )
+        const allModels = listData.models || [];
+
+        discoveredModels = allModels
+          .filter((m) => {
+            const name = (m.name || "").toLowerCase();
+            const methods = m.supportedGenerationMethods || [];
+            if (!methods.includes("generateContent")) return false;
+            if (!name.includes("gemini")) return false;
+            // Loại bỏ các model cũ bị khóa hoặc model tạo ảnh / giọng nói
+            if (
+              name.includes("tts") ||
+              name.includes("image") ||
+              name.includes("embedding") ||
+              name.includes("2.5-flash") ||
+              name.includes("2.0") ||
+              name.includes("1.5")
+            ) {
+              return false;
+            }
+            return true;
+          })
           .map((m) => m.name);
 
-        if (availableFlash.length > 0) {
-          candidateModels = [...new Set([...availableFlash, ...candidateModels])];
-        }
-      } else {
-        const listErr = await listRes.text();
-        console.error("ListModels failed:", listRes.status, listErr);
+        hasGemmaBackup = allModels.some(
+          (m) =>
+            m.name === "models/gemma-3-27b-it" &&
+            (m.supportedGenerationMethods || []).includes("generateContent")
+        );
       }
     } catch (e) {
-      console.error("ListModels exception:", e.message);
+      console.error("ListModels warning:", e.message);
     }
 
-    // Bước 2: Thử gọi lần lượt từng model Flash hợp lệ
+    const candidateModels = [...new Set([...priorityModels, ...discoveredModels])];
+
     let response = null;
     let lastStatus = 502;
     let lastErrorText = "";
+    let saw503 = false;
 
-    for (const modelName of candidateModels) {
+    const tryGeminiModel = async (modelName) => {
       const url = `https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent?key=${apiKey}`;
-      response = await fetch(url, {
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -116,26 +139,54 @@ Hãy phân tích hình ảnh theo các quy tắc sau:
           },
         }),
       });
+      if (!res.ok) {
+        lastStatus = res.status;
+        lastErrorText = await res.text();
+        if (res.status === 503) saw503 = true;
+        console.error(`Model ${modelName} failed (${res.status}):`, lastErrorText);
+      }
+      return res;
+    };
 
+    for (const modelName of candidateModels) {
+      response = await tryGeminiModel(modelName);
       if (response.ok) break;
-      lastStatus = response.status;
-      lastErrorText = await response.text();
-      console.error(`Model ${modelName} failed (${lastStatus}):`, lastErrorText);
+      if (response.status === 403) break;
+    }
 
-      // Nếu hết lượt miễn phí (429) hoặc Key bị từ chối quyền (403) thì dừng ngay
-      if (lastStatus === 429 || lastStatus === 403) break;
+    // Nếu gặp 503 (Google quá tải tạm thời), chờ 1.2 giây rồi thử lại
+    if ((!response || !response.ok) && saw503) {
+      await new Promise((r) => setTimeout(r, 1200));
+      for (const retryModel of ["models/gemini-3.8-flash", "models/gemini-flash-latest"]) {
+        response = await tryGeminiModel(retryModel);
+        if (response.ok) break;
+      }
+    }
+
+    // Dự phòng cuối cùng bằng Gemma 3 27B nếu toàn bộ Gemini Flash đang bảo trì
+    if ((!response || !response.ok) && hasGemmaBackup) {
+      const gemmaUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemma-3-27b-it:generateContent?key=${apiKey}`;
+      response = await fetch(gemmaUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents }),
+      });
+      if (!response.ok) {
+        lastStatus = response.status;
+        lastErrorText = await response.text();
+        console.error(`Backup Gemma failed (${lastStatus}):`, lastErrorText);
+      }
     }
 
     if (!response || !response.ok) {
-      const status = lastStatus === 429 ? 429 : 502;
       return {
-        statusCode: status,
+        statusCode: lastStatus === 429 ? 429 : 502,
         headers,
         body: JSON.stringify({
           error:
-            lastStatus === 429
-              ? "Hết lượt AI miễn phí tạm thời"
-              : `Lỗi Google API (${lastStatus}): ${lastErrorText.slice(0, 160)}`,
+            lastStatus === 503
+              ? "Máy chủ Google AI đang quá tải tạm thời, bạn bấm quét lại sau 5 giây nhé."
+              : `Lỗi kết nối Google AI (${lastStatus})`,
         }),
       };
     }
