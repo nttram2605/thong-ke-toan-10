@@ -88,16 +88,10 @@ Hãy phân tích hình ảnh theo các quy tắc sau:
       },
     };
 
-    // Tự động chọn cổng API phù hợp với định dạng Key (Vertex Express AQ. vs AI Studio AIzaSy)
-    const isExpressKey = apiKey.startsWith("AQ.");
-    const endpoints = isExpressKey
-      ? [
-          `https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-        ]
-      : [
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-        ];
+    const endpoints = [
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`,
+    ];
 
     let response = null;
     let lastErrorText = "";
@@ -121,7 +115,7 @@ Hãy phân tích hình ảnh theo các quy tắc sau:
         statusCode: status,
         headers,
         body: JSON.stringify({
-          error: status === 429 ? "Hết lượt AI miễn phí tạm thời" : "Lỗi xác thực hoặc kết nối API Key",
+          error: status === 429 ? "Hết lượt AI miễn phí tạm thời" : "Lỗi kết nối dịch vụ AI",
           detail: lastErrorText.slice(0, 200),
         }),
       };
