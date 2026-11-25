@@ -46,83 +46,103 @@ Hãy phân tích hình ảnh theo các quy tắc sau:
 2. Phân loại chế độ:
    - Đặt mode = "freq" nếu ảnh là bảng phân bố tần số (gồm hàng/cột Giá trị x_i và hàng/cột Tần số n_i như: Số học sinh, Số ngày, Số lần, Số cây, Số người, Tần số...).
    - Đặt mode = "raw" nếu ảnh liệt kê dãy số liệu rời rạc không kèm tần số.
-3. Chuẩn hóa số: Chuyển dấu phẩy thập phân kiểu Việt Nam (ví dụ 7,5) thành số thực chuẩn (7.5).`;
+3. Chuẩn hóa số: Chuyển dấu phẩy thập phân kiểu Việt Nam (ví dụ 7,5) thành số thực chuẩn (7.5).
+4. Chỉ trả về DUY NHẤT một đối tượng JSON hợp lệ (không giải thích thêm) theo đúng mẫu sau:
+{
+  "mode": "freq",
+  "rawNumbers": [],
+  "frequencyTable": [{"value": 7.5, "frequency": 4}],
+  "description": "Mô tả ngắn gọn bảng số liệu"
+}`;
 
-    const requestPayload = {
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: prompt },
-            {
-              inlineData: {
-                mimeType: mimeType,
-                data: base64Data,
-              },
+    const contents = [
+      {
+        role: "user",
+        parts: [
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType: mimeType,
+              data: base64Data,
             },
-          ],
-        },
-      ],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "OBJECT",
-          properties: {
-            mode: { type: "STRING", enum: ["raw", "freq"] },
-            rawNumbers: { type: "ARRAY", items: { type: "NUMBER" } },
-            frequencyTable: {
-              type: "ARRAY",
-              items: {
-                type: "OBJECT",
-                properties: {
-                  value: { type: "NUMBER" },
-                  frequency: { type: "INTEGER" },
-                },
-                required: ["value", "frequency"],
-              },
-            },
-            description: { type: "STRING" },
           },
-          required: ["mode", "description"],
-        },
+        ],
       },
-    };
-
-    const endpoints = [
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`,
     ];
 
+    // Bước 1: Tự động lấy danh sách các model Flash khả dụng trên chính API Key này
+    let candidateModels = ["models/gemini-3.8-flash", "models/gemini-flash-latest"];
+    try {
+      const listRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+      );
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        const availableFlash = (listData.models || [])
+          .filter(
+            (m) =>
+              m.name &&
+              m.name.toLowerCase().includes("flash") &&
+              Array.isArray(m.supportedGenerationMethods) &&
+              m.supportedGenerationMethods.includes("generateContent")
+          )
+          .map((m) => m.name);
+
+        if (availableFlash.length > 0) {
+          candidateModels = [...new Set([...availableFlash, ...candidateModels])];
+        }
+      } else {
+        const listErr = await listRes.text();
+        console.error("ListModels failed:", listRes.status, listErr);
+      }
+    } catch (e) {
+      console.error("ListModels exception:", e.message);
+    }
+
+    // Bước 2: Thử gọi lần lượt từng model Flash hợp lệ
     let response = null;
+    let lastStatus = 502;
     let lastErrorText = "";
 
-    for (const url of endpoints) {
+    for (const modelName of candidateModels) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent?key=${apiKey}`;
       response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestPayload),
+        body: JSON.stringify({
+          contents,
+          generationConfig: {
+            responseMimeType: "application/json",
+          },
+        }),
       });
 
       if (response.ok) break;
+      lastStatus = response.status;
       lastErrorText = await response.text();
-      console.error("API attempt failed:", response.status, lastErrorText);
-      if (response.status === 429) break;
+      console.error(`Model ${modelName} failed (${lastStatus}):`, lastErrorText);
+
+      // Nếu hết lượt miễn phí (429) hoặc Key bị từ chối quyền (403) thì dừng ngay
+      if (lastStatus === 429 || lastStatus === 403) break;
     }
 
     if (!response || !response.ok) {
-      const status = response && response.status === 429 ? 429 : 502;
+      const status = lastStatus === 429 ? 429 : 502;
       return {
         statusCode: status,
         headers,
         body: JSON.stringify({
-          error: status === 429 ? "Hết lượt AI miễn phí tạm thời" : "Lỗi kết nối dịch vụ AI",
-          detail: lastErrorText.slice(0, 200),
+          error:
+            lastStatus === 429
+              ? "Hết lượt AI miễn phí tạm thời"
+              : `Lỗi Google API (${lastStatus}): ${lastErrorText.slice(0, 160)}`,
         }),
       };
     }
 
     const result = await response.json();
-    const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    let textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    textResponse = textResponse.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
 
     if (!textResponse) {
       return {
