@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Thống Kê Toán 10 - Xu Thế Trung Tâm & Độ Phân Tán (CT GDPT 2018)</title>
+    <title>Trạm Thống Kê (Toán 10) - Xu Thế Trung Tâm & Độ Phân Tán (CT GDPT 2018)</title>
     
     <!-- Tải Tailwind CSS và cấu hình Dark Mode theo class -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -63,7 +63,7 @@
                     <i class="fa-solid fa-square-root-variable text-lg"></i>
                 </div>
                 <div class="min-w-0">
-                    <h1 class="font-bold text-base sm:text-xl text-slate-900 dark:text-white leading-tight truncate">Thống Kê Toán 10</h1>
+                    <h1 class="font-bold text-base sm:text-xl text-slate-900 dark:text-white leading-tight truncate">Trạm Thống Kê (Toán 10)</h1>
                     <p class="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">Xu thế trung tâm & Độ phân tán (CT GDPT 2018)</p>
                 </div>
             </div>
@@ -664,7 +664,7 @@
                             <i class="fa-regular fa-copy"></i> Chép Prompt
                         </button>
                     </div>
-                    <pre id="projectPromptText" class="p-3.5 rounded-xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 font-mono text-xs text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">Tạo ứng dụng web học tập hoàn chỉnh (single-file HTML + Tailwind CSS + Vanilla JS) mang tên "Thống Kê Toán 10 - Xu Thế Trung Tâm & Độ Phân Tán (CT GDPT 2018)" (không biểu đồ).
+                    <pre id="projectPromptText" class="p-3.5 rounded-xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 font-mono text-xs text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">Tạo ứng dụng web học tập hoàn chỉnh (single-file HTML + Tailwind CSS + Vanilla JS) mang tên "Trạm Thống Kê (Toán 10) - Xu Thế Trung Tâm & Độ Phân Tán (CT GDPT 2018)" (không biểu đồ).
 1. Header & Dark Mode: Logo + Tiêu đề + Nút chuyển đổi Theme Sáng/Tối (lưu localStorage) + Bộ chọn Làm tròn (2, 3, 4 chữ số).
 2. Dải lưu ý đầu trang nhắc kiểm tra lại số liệu AI và khẳng định công thức chuẩn SGK Toán 10 (CT GDPT 2018).
 3. Cột trái — Nhập dữ liệu & Quét ảnh thông minh:
@@ -1591,7 +1591,7 @@ Quy tắc:
             const d = s.decimals;
             const outlierStr = s.outliers.length > 0 ? s.outliers.join(', ') : 'Không có';
             const summaryText = [
-                `📊 KẾT QUẢ THỐNG KÊ TOÁN 10 (n = ${s.n})`,
+                `📊 TRẠM THỐNG KÊ (TOÁN 10) — KẾT QUẢ (n = ${s.n})`,
                 `• Xu thế trung tâm: x̄ = ${formatNum(s.mean, d)} | Me = ${formatNum(s.q2, d)} | Q₁ = ${formatNum(s.q1, d)}, Q₂ = ${formatNum(s.q2, d)}, Q₃ = ${formatNum(s.q3, d)} | M₀ = ${s.modeText}`,
                 `• Độ phân tán (SGK): R = ${formatNum(s.range, d)} | ΔQ = ${formatNum(s.iqr, d)} | s² = ${formatNum(s.sgkVar, d)} | s = ${formatNum(s.sgkStd, d)}`,
                 `• Giá trị bất thường: ${outlierStr} (Ngưỡng: [${formatNum(s.lowerFence, d)} ; ${formatNum(s.upperFence, d)}])`
